@@ -1,21 +1,24 @@
 # self-drive
 
-一个适合 NAS / Docker 部署的多用户网页网盘 MVP。
+一个适合 NAS / Docker 部署的多用户网页网盘，当前已推进到第二版 MVP。
 
-当前版本已包含：
+## 当前已实现
+
 - 多用户注册 / 登录
 - JWT 鉴权
-- 文件上传
-- 文件列表
-- 文件下载
+- 第一位注册用户自动成为管理员
+- 文件夹 / 根目录 / 面包屑导航
+- 文件上传 / 下载 / 删除 / 重命名
 - 图片 / PDF / 音视频 / 文本预览
-- 用户文件隔离
-- Docker Compose 一键启动
+- 文件公开分享链接
+- 独立分享页 `share.html`
+- 管理员用户概览（用户数、文件数、占用情况）
 - PostgreSQL 元数据 + MinIO 文件存储
+- Docker Compose 一键启动
 
 ## 技术栈
 
-- 前端：原生 HTML / CSS / JavaScript（先把 MVP 跑通）
+- 前端：原生 HTML / CSS / JavaScript
 - 后端：Node.js + Express
 - 数据库：PostgreSQL
 - 对象存储：MinIO
@@ -47,28 +50,51 @@ docker compose up -d --build
 如果你已经有外层 Nginx：
 - 直接把 `drive.example.com` 整站反代到 `http://NAS_IP:8080` 即可
 - `/api` 已经由前端容器内的 Nginx 自动转发到后端
+- 分享页同样会自动走 `drive.example.com/share.html?token=...`
 
-注意 Nginx 需要额外设置：
+建议至少加上这些 Nginx 配置：
 - `client_max_body_size 200m;`
 - `proxy_read_timeout 600s;`
 - `proxy_send_timeout 600s;`
-- 对下载和预览保留 `Range` / 流式支持（后续增强）
+- 后续如果你要更好的视频拖动体验，再继续加 `Range` / 流式优化
 
-## 当前已实现范围
+## 环境变量
 
-这是第一版可用 MVP，优先把核心链路跑通。
+见 `.env.example`，核心字段有：
 
-已完成：
-- 用户系统
-- 上传 / 下载 / 预览
-- MinIO 存储
-- Docker 化
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `JWT_SECRET`
+- `APP_PORT`
+- `FRONTEND_PORT`
+- `MINIO_PORT`
+- `MINIO_CONSOLE_PORT`
+- `MINIO_ROOT_USER`
+- `MINIO_ROOT_PASSWORD`
+- `MINIO_BUCKET`
+- `MAX_FILE_SIZE_MB`
 
-下一步建议：
-- 文件夹
-- 分享链接
-- 管理员后台
-- 存储配额
+## 当前限制
+
+这是第二版 MVP，核心使用链路已经具备，但还不是最终生产版。
+
+暂未完成：
+- 文件移动 / 拖拽整理
+- 目录树侧边栏
+- 断点续传 / 分片上传
+- 分享密码 / 分享次数限制
 - 回收站
-- 分片上传 / 断点续传
+- 存储配额限制
 - Office 文档转 PDF 预览
+- 更细粒度角色权限
+
+## 下一步建议
+
+优先级建议如下：
+
+1. 文件移动与批量操作
+2. 分享权限增强（密码、到期、次数限制）
+3. 管理后台（封禁用户、配额、日志）
+4. 大文件上传优化
+5. Office 预览与转码

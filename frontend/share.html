@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>self-drive 分享</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell share-shell">
+      <div class="card share-page">
+        <div class="section-head">
+          <div>
+            <h1>文件分享</h1>
+            <p id="shareMeta" class="subtle">正在读取分享信息...</p>
+          </div>
+          <a class="ghost link-button" href="./">返回 self-drive</a>
+        </div>
+        <div class="share-page-actions">
+          <a id="downloadLink" class="link-button hidden" target="_blank" rel="noreferrer">下载文件</a>
+        </div>
+        <div id="publicPreview" class="preview-container muted">加载中...</div>
+      </div>
+    </div>
+
+    <script src="./share.js"></script>
+  </body>
+</html>

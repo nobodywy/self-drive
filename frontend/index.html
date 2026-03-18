@@ -46,20 +46,37 @@
 
         <section id="appCard" class="hidden app-grid">
           <div class="card sidebar">
-            <h2>上传文件</h2>
-            <form id="uploadForm" class="stack">
-              <input id="fileInput" type="file" name="files" multiple />
+            <div class="section-head compact-head">
+              <h2>目录</h2>
+              <button id="rootBtn" class="ghost">根目录</button>
+            </div>
+            <div id="breadcrumbBar" class="breadcrumb-bar"></div>
+
+            <form id="folderForm" class="stack spaced-top">
+              <label>
+                <span>新建文件夹</span>
+                <input id="folderNameInput" type="text" placeholder="例如：合同、图片、资料" />
+              </label>
+              <button type="submit">创建文件夹</button>
+            </form>
+            <p id="folderMessage" class="hint"></p>
+
+            <form id="uploadForm" class="stack spaced-top">
+              <label>
+                <span>上传文件到当前目录</span>
+                <input id="fileInput" type="file" name="files" multiple />
+              </label>
               <button type="submit">上传</button>
             </form>
             <p id="uploadMessage" class="hint"></p>
 
             <div class="stats">
               <div>
-                <span class="label">文件数</span>
+                <span class="label">总文件数</span>
                 <strong id="fileCount">0</strong>
               </div>
               <div>
-                <span class="label">总大小</span>
+                <span class="label">总占用</span>
                 <strong id="totalSize">0 B</strong>
               </div>
             </div>
@@ -67,30 +84,57 @@
 
           <div class="card content">
             <div class="section-head">
-              <h2>我的文件</h2>
-              <button id="refreshBtn" class="ghost">刷新</button>
+              <div>
+                <h2>资源浏览器</h2>
+                <p id="currentLocation" class="subtle">当前：根目录</p>
+              </div>
+              <div class="head-actions">
+                <button id="upBtn" class="ghost">返回上级</button>
+                <button id="refreshBtn" class="ghost">刷新</button>
+              </div>
             </div>
-            <div id="emptyState" class="empty">还没有文件，先上传一个试试。</div>
-            <table id="fileTable" class="hidden">
+            <div id="emptyState" class="empty">当前目录还是空的，先建个文件夹或者上传文件吧。</div>
+            <table id="explorerTable" class="hidden">
               <thead>
                 <tr>
-                  <th>文件名</th>
-                  <th>大小</th>
+                  <th>名称</th>
                   <th>类型</th>
-                  <th>上传时间</th>
+                  <th>大小</th>
+                  <th>时间</th>
                   <th>操作</th>
                 </tr>
               </thead>
-              <tbody id="fileTableBody"></tbody>
+              <tbody id="explorerTableBody"></tbody>
             </table>
           </div>
 
-          <div class="card preview">
-            <div class="section-head">
-              <h2>预览</h2>
-              <span id="previewTitle" class="hint">未选择文件</span>
+          <div class="right-stack">
+            <div class="card preview">
+              <div class="section-head">
+                <h2>预览</h2>
+                <span id="previewTitle" class="hint">未选择文件</span>
+              </div>
+              <div id="previewContainer" class="preview-container muted">支持图片 / PDF / 文本 / 音视频预览</div>
             </div>
-            <div id="previewContainer" class="preview-container muted">支持图片 / PDF / 文本 / 音视频预览</div>
+
+            <div class="card shares">
+              <div class="section-head">
+                <h2>分享链接</h2>
+                <button id="refreshSharesBtn" class="ghost">刷新</button>
+              </div>
+              <p id="shareMessage" class="hint"></p>
+              <div id="sharesEmpty" class="empty">还没有分享链接，点某个文件的“分享”就能生成。</div>
+              <div id="sharesList" class="share-list hidden"></div>
+            </div>
+
+            <div id="adminCard" class="card hidden">
+              <div class="section-head">
+                <h2>管理员面板</h2>
+                <button id="refreshAdminBtn" class="ghost">刷新</button>
+              </div>
+              <div id="adminEmpty" class="empty">你是管理员，这里会显示用户与存储概况。</div>
+              <div id="adminList" class="admin-list hidden"></div>
+            </div>
           </div>
         </section>
       </main>
