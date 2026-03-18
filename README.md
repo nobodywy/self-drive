@@ -36,8 +36,15 @@
 cp .env.example .env
 ```
 
-3. 修改 `.env` 里的密码和密钥
-4. 启动服务
+3. 确认宿主机数据目录存在（默认是飞牛目录）
+
+```bash
+mkdir -p /vol4/1000/data_2/openclaw_data/workspace/jiang_data/postgres
+mkdir -p /vol4/1000/data_2/openclaw_data/workspace/jiang_data/minio
+```
+
+4. 修改 `.env` 里的密码、密钥和目录路径
+5. 启动服务
 
 ```bash
 docker compose up -d --build
@@ -47,6 +54,8 @@ docker compose up -d --build
 - 网盘页面：`http://NAS_IP:8080`
 - 健康检查：`http://NAS_IP:8080/api/health`
 - MinIO Console：`http://NAS_IP:9001`
+- 宿主机持久化目录：`/vol4/1000/data_2/openclaw_data/workspace/jiang_data`
+- 容器内挂载目录：`/jiang_data`
 
 ## 现有反向代理接入建议
 
@@ -65,6 +74,7 @@ docker compose up -d --build
 
 见 `.env.example`，核心字段有：
 
+- `HOST_DATA_ROOT`：飞牛宿主机数据根目录，默认 `/vol4/1000/data_2/openclaw_data/workspace/jiang_data`
 - `POSTGRES_DB`
 - `POSTGRES_USER`
 - `POSTGRES_PASSWORD`
