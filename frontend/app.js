@@ -29,6 +29,7 @@ const uploadMessage = document.getElementById('uploadMessage');
 const fileInput = document.getElementById('fileInput');
 const fileCount = document.getElementById('fileCount');
 const totalSize = document.getElementById('totalSize');
+const quotaSize = document.getElementById('quotaSize');
 const currentLocation = document.getElementById('currentLocation');
 const breadcrumbBar = document.getElementById('breadcrumbBar');
 const rootBtn = document.getElementById('rootBtn');
@@ -46,6 +47,16 @@ const sharesEmpty = document.getElementById('sharesEmpty');
 const sharesList = document.getElementById('sharesList');
 const shareMessage = document.getElementById('shareMessage');
 const refreshSharesBtn = document.getElementById('refreshSharesBtn');
+const accountRoleBadge = document.getElementById('accountRoleBadge');
+const accountEmailText = document.getElementById('accountEmailText');
+const accountStatusText = document.getElementById('accountStatusText');
+const profileForm = document.getElementById('profileForm');
+const accountNameInput = document.getElementById('accountNameInput');
+const profileMessage = document.getElementById('profileMessage');
+const passwordForm = document.getElementById('passwordForm');
+const currentPasswordInput = document.getElementById('currentPasswordInput');
+const newPasswordInput = document.getElementById('newPasswordInput');
+const passwordMessage = document.getElementById('passwordMessage');
 const adminCard = document.getElementById('adminCard');
 const adminEmpty = document.getElementById('adminEmpty');
 const adminList = document.getElementById('adminList');
@@ -104,6 +115,10 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const message = payload?.message || payload || '请求失败';
+    if (response.status === 401) {
+      clearSession();
+      setMode('login');
+    }
     throw new Error(message);
   }
 
@@ -117,6 +132,20 @@ function setMode(mode) {
   nameField.classList.toggle('hidden', mode !== 'register');
   submitBtn.textContent = mode === 'login' ? '登录' : '注册并进入';
   authMessage.textContent = '';
+}
+
+function renderCurrentUser() {
+  if (!state.user) {
+    return;
+  }
+
+  currentUser.textContent = `${state.user.name}（${state.user.email} / ${state.user.role}）`;
+  quotaSize.textContent = `${state.user.storageQuotaMb} MB`;
+  accountRoleBadge.textContent = state.user.role;
+  accountRoleBadge.className = `badge ${state.user.role === 'admin' ? 'admin' : ''}`;
+  accountEmailText.textContent = `邮箱：${state.user.email}`;
+  accountStatusText.textContent = `状态：${state.user.isEnabled ? '启用中' : '已禁用'} · 配额：${state.user.storageQuotaMb} MB`;
+  accountNameInput.value = state.user.name;
 }
 
 function resetPreview(message = '支持图片 / PDF / 文本 / 音视频预览') {
@@ -444,6 +473,16 @@ function renderShares(shares) {
   }
 }
 
+function createAdminActionButton(label, handler, ghost = false) {
+  const button = document.createElement('button');
+  button.textContent = label;
+  if (ghost) {
+    button.className = 'ghost';
+  }
+  button.addEventListener('click', handler);
+  return button;
+}
+
 function renderAdminUsers(users) {
   state.adminUsers = users;
   adminList.innerHTML = '';
@@ -462,21 +501,111 @@ function renderAdminUsers(users) {
     card.className = 'admin-item';
 
     const title = document.createElement('strong');
-    title.textContent = `${user.name}（${user.role}）`;
+    title.textContent = `${user.name}${user.id === state.user.id ? '（我）' : ''}`;
 
-    const email = document.createElement('span');
-    email.textContent = user.email;
+    const meta = document.createElement('div');
+    meta.className = 'admin-meta';
+    meta.textContent = `${user.email} · ${user.role} · ${user.isEnabled ? '启用中' : '已禁用'}`;
 
-    const fileCountText = document.createElement('span');
-    fileCountText.textContent = `文件数：${user.fileCount}`;
+    const stats = document.createElement('div');
+    stats.className = 'admin-meta';
+    stats.textContent = `文件数：${user.fileCount} · 占用：${formatBytes(user.totalSize)} · 配额：${user.storageQuotaMb} MB`;
 
-    const totalSizeText = document.createElement('span');
-    totalSizeText.textContent = `占用：${formatBytes(user.totalSize)}`;
+    const actions = document.createElement('div');
+    actions.className = 'table-actions';
 
-    const createdAt = document.createElement('span');
-    createdAt.textContent = `注册时间：${formatDate(user.createdAt)}`;
+    const renameButton = createAdminActionButton('改昵称', async () => {
+      const name = window.prompt('输入新的昵称', user.name)?.trim();
+      if (!name) {
+        return;
+      }
+      try {
+        await request(`/admin/users/${user.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name })
+        });
+        await loadAdminUsers();
+      } catch (error) {
+        profileMessage.textContent = error.message;
+      }
+    }, true);
 
-    card.append(title, email, fileCountText, totalSizeText, createdAt);
+    const roleButton = createAdminActionButton(user.role === 'admin' ? '改为普通用户' : '设为管理员', async () => {
+      try {
+        await request(`/admin/users/${user.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ role: user.role === 'admin' ? 'user' : 'admin' })
+        });
+        await loadAdminUsers();
+      } catch (error) {
+        profileMessage.textContent = error.message;
+      }
+    }, true);
+
+    const statusButton = createAdminActionButton(user.isEnabled ? '禁用' : '启用', async () => {
+      try {
+        await request(`/admin/users/${user.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ isEnabled: !user.isEnabled })
+        });
+        await loadAdminUsers();
+      } catch (error) {
+        profileMessage.textContent = error.message;
+      }
+    }, true);
+
+    const quotaButton = createAdminActionButton('改配额', async () => {
+      const input = window.prompt('输入新的配额（MB，至少 100）', String(user.storageQuotaMb));
+      if (!input) {
+        return;
+      }
+      try {
+        await request(`/admin/users/${user.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ storageQuotaMb: Number(input) })
+        });
+        await loadAdminUsers();
+      } catch (error) {
+        profileMessage.textContent = error.message;
+      }
+    }, true);
+
+    const passwordButton = createAdminActionButton('重置密码', async () => {
+      const input = window.prompt('输入新密码（至少 6 位）');
+      if (!input) {
+        return;
+      }
+      try {
+        await request(`/admin/users/${user.id}/reset-password`, {
+          method: 'POST',
+          body: JSON.stringify({ newPassword: input })
+        });
+        profileMessage.textContent = `已重置 ${user.email} 的密码`;
+      } catch (error) {
+        profileMessage.textContent = error.message;
+      }
+    }, true);
+
+    const deleteButton = createAdminActionButton('删除用户', async () => {
+      if (!window.confirm(`确认删除用户 ${user.email} ? 这会同时删除其文件和分享。`)) {
+        return;
+      }
+      try {
+        await request(`/admin/users/${user.id}`, { method: 'DELETE' });
+        await loadAdminUsers();
+      } catch (error) {
+        profileMessage.textContent = error.message;
+      }
+    });
+
+    if (user.id === state.user.id) {
+      roleButton.disabled = true;
+      statusButton.disabled = true;
+      deleteButton.disabled = true;
+    }
+
+    actions.append(renameButton, roleButton, statusButton, quotaButton, passwordButton, deleteButton);
+    card.append(title, meta, stats, actions);
     adminList.appendChild(card);
   }
 }
@@ -507,10 +636,10 @@ function saveSession(token, user) {
   state.token = token;
   state.user = user;
   localStorage.setItem('selfDriveToken', token);
-  currentUser.textContent = `${user.name}（${user.email} / ${user.role}）`;
   userBox.classList.remove('hidden');
   authCard.classList.add('hidden');
   appCard.classList.remove('hidden');
+  renderCurrentUser();
 
   if (user.role === 'admin') {
     adminCard.classList.remove('hidden');
@@ -531,6 +660,8 @@ function clearSession() {
   explorerTableBody.innerHTML = '';
   sharesList.innerHTML = '';
   adminList.innerHTML = '';
+  profileForm.reset();
+  passwordForm.reset();
   resetPreview();
 }
 
@@ -611,6 +742,43 @@ authForm.addEventListener('submit', async (event) => {
   }
 });
 
+profileForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  profileMessage.textContent = '保存中...';
+
+  try {
+    const payload = await request('/account/profile', {
+      method: 'PATCH',
+      body: JSON.stringify({ name: accountNameInput.value.trim() })
+    });
+    state.user = payload.user;
+    renderCurrentUser();
+    profileMessage.textContent = '资料已保存';
+    await loadAdminUsers();
+  } catch (error) {
+    profileMessage.textContent = error.message;
+  }
+});
+
+passwordForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  passwordMessage.textContent = '更新中...';
+
+  try {
+    const payload = await request('/account/password', {
+      method: 'POST',
+      body: JSON.stringify({
+        currentPassword: currentPasswordInput.value,
+        newPassword: newPasswordInput.value
+      })
+    });
+    passwordForm.reset();
+    passwordMessage.textContent = payload.message || '密码已更新';
+  } catch (error) {
+    passwordMessage.textContent = error.message;
+  }
+});
+
 folderForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   folderMessage.textContent = '创建中...';
@@ -657,6 +825,7 @@ uploadForm.addEventListener('submit', async (event) => {
     uploadMessage.textContent = '上传完成';
     fileInput.value = '';
     await loadExplorer();
+    await loadAdminUsers();
   } catch (error) {
     uploadMessage.textContent = error.message;
   }

@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { config } from './config.js';
+import { pool } from './db.js';
 
 export async function hashPassword(password) {
   return bcrypt.hash(password, 10);
@@ -36,7 +37,7 @@ export function readToken(req) {
   return null;
 }
 
-export function authenticate(req, res, next) {
+export async function authenticate(req, res, next) {
   const token = readToken(req);
 
   if (!token) {
@@ -45,12 +46,32 @@ export function authenticate(req, res, next) {
 
   try {
     const payload = jwt.verify(token, config.jwtSecret);
+    const result = await pool.query(
+      `SELECT id, name, email, role, is_enabled, storage_quota_mb
+       FROM users
+       WHERE id = $1
+       LIMIT 1`,
+      [Number(payload.sub)]
+    );
+
+    const user = result.rows[0];
+    if (!user) {
+      return res.status(401).json({ message: '用户不存在，请重新登录' });
+    }
+
+    if (!user.is_enabled) {
+      return res.status(403).json({ message: '账号已被禁用，请联系管理员' });
+    }
+
     req.user = {
-      id: Number(payload.sub),
-      email: payload.email,
-      role: payload.role,
-      name: payload.name
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isEnabled: user.is_enabled,
+      storageQuotaMb: Number(user.storage_quota_mb)
     };
+
     return next();
   } catch {
     return res.status(401).json({ message: '登录状态失效，请重新登录' });

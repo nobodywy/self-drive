@@ -54,7 +54,7 @@ button.tab.active {
 
 button:disabled {
   cursor: default;
-  opacity: 0.65;
+  opacity: 0.6;
 }
 
 input {
@@ -171,6 +171,7 @@ label span {
 }
 
 .shares,
+.account-card,
 #adminCard {
   min-height: 220px;
 }
@@ -234,6 +235,28 @@ label span {
 
 .crumb-divider {
   color: #8c97b0;
+}
+
+.badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eef3ff;
+  color: #27459a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.badge.admin {
+  background: #fff1dd;
+  color: #a55a00;
+}
+
+.account-meta,
+.admin-meta {
+  display: grid;
+  gap: 6px;
+  color: #5f6c8f;
+  font-size: 14px;
 }
 
 .preview-container {

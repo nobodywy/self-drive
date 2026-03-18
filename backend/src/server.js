@@ -27,6 +27,8 @@ function serializeUser(user) {
     name: user.name,
     email: user.email,
     role: user.role,
+    isEnabled: user.is_enabled,
+    storageQuotaMb: Number(user.storage_quota_mb),
     createdAt: user.created_at
   };
 }
@@ -63,6 +65,20 @@ function serializeShare(share, origin) {
   };
 }
 
+function serializeManagedUser(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    isEnabled: row.is_enabled,
+    storageQuotaMb: Number(row.storage_quota_mb),
+    createdAt: row.created_at,
+    fileCount: Number(row.file_count || 0),
+    totalSize: Number(row.total_size || 0)
+  };
+}
+
 function isTextLike(mimeType = '') {
   return mimeType.startsWith('text/') || mimeType.includes('json') || mimeType.includes('javascript') || mimeType.includes('xml');
 }
@@ -93,12 +109,47 @@ function parseShareDays(value) {
   return Math.min(Math.max(Math.round(days), 1), 365);
 }
 
+function normalizeQuotaMb(value) {
+  const quota = Number(value);
+  if (!Number.isInteger(quota) || quota < 100) {
+    throw new Error('存储配额至少为 100MB');
+  }
+
+  return quota;
+}
+
 function requireAdmin(req, res, next) {
   if (req.user?.role !== 'admin') {
     return res.status(403).json({ message: '需要管理员权限' });
   }
 
   return next();
+}
+
+async function getUserById(userId, withPassword = false) {
+  const columns = withPassword
+    ? 'id, name, email, role, password_hash, is_enabled, storage_quota_mb, created_at'
+    : 'id, name, email, role, is_enabled, storage_quota_mb, created_at';
+
+  const result = await pool.query(
+    `SELECT ${columns}
+     FROM users
+     WHERE id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function countAdminUsers() {
+  const result = await pool.query(
+    `SELECT COUNT(*)::int AS count
+     FROM users
+     WHERE role = 'admin'`
+  );
+
+  return Number(result.rows[0].count || 0);
 }
 
 async function getFolder(folderId, ownerId) {
@@ -204,6 +255,37 @@ async function findActiveShare(token) {
   return result.rows[0] || null;
 }
 
+async function getAdminUserSummary(userId) {
+  const result = await pool.query(
+    `SELECT u.id, u.name, u.email, u.role, u.is_enabled, u.storage_quota_mb, u.created_at,
+            COUNT(f.id)::int AS file_count,
+            COALESCE(SUM(f.size), 0)::bigint AS total_size
+     FROM users u
+     LEFT JOIN files f ON f.owner_id = u.id
+     WHERE u.id = $1
+     GROUP BY u.id`,
+    [userId]
+  );
+
+  return result.rows[0] ? serializeManagedUser(result.rows[0]) : null;
+}
+
+async function listUserObjectKeys(userId) {
+  const result = await pool.query(
+    'SELECT bucket, object_key FROM files WHERE owner_id = $1',
+    [userId]
+  );
+
+  return result.rows;
+}
+
+async function removeUserObjects(userId) {
+  const objects = await listUserObjectKeys(userId);
+  for (const object of objects) {
+    await minioClient.removeObject(object.bucket, object.object_key);
+  }
+}
+
 function contentDisposition(type, filename) {
   const encoded = encodeURIComponent(filename);
   return `${type}; filename*=UTF-8''${encoded}`;
@@ -254,7 +336,7 @@ app.post('/api/auth/register', async (req, res) => {
     const result = await pool.query(
       `INSERT INTO users (name, email, password_hash, role)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, name, email, role, created_at`,
+       RETURNING id, name, email, role, is_enabled, storage_quota_mb, created_at`,
       [String(name).trim(), normalizedEmail, passwordHash, role]
     );
 
@@ -289,6 +371,10 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ message: '邮箱或密码错误' });
     }
 
+    if (!user.is_enabled) {
+      return res.status(403).json({ message: '账号已被禁用，请联系管理员' });
+    }
+
     const valid = await verifyPassword(String(password), user.password_hash);
     if (!valid) {
       return res.status(401).json({ message: '邮箱或密码错误' });
@@ -303,17 +389,61 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.get('/api/auth/me', authenticate, async (req, res) => {
-  const result = await pool.query(
-    'SELECT id, name, email, role, created_at FROM users WHERE id = $1 LIMIT 1',
-    [req.user.id]
-  );
-
-  const user = result.rows[0];
+  const user = await getUserById(req.user.id);
   if (!user) {
     return res.status(404).json({ message: '用户不存在' });
   }
 
   return res.json({ user: serializeUser(user) });
+});
+
+app.patch('/api/account/profile', authenticate, async (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) {
+    return res.status(400).json({ message: '昵称不能为空' });
+  }
+
+  const result = await pool.query(
+    `UPDATE users
+     SET name = $1, updated_at = NOW()
+     WHERE id = $2
+     RETURNING id, name, email, role, is_enabled, storage_quota_mb, created_at`,
+    [name, req.user.id]
+  );
+
+  return res.json({ user: serializeUser(result.rows[0]) });
+});
+
+app.post('/api/account/password', authenticate, async (req, res) => {
+  const { currentPassword, newPassword } = req.body ?? {};
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'currentPassword 和 newPassword 都必填' });
+  }
+
+  if (String(newPassword).length < 6) {
+    return res.status(400).json({ message: '新密码至少需要 6 位' });
+  }
+
+  const user = await getUserById(req.user.id, true);
+  if (!user) {
+    return res.status(404).json({ message: '用户不存在' });
+  }
+
+  const valid = await verifyPassword(String(currentPassword), user.password_hash);
+  if (!valid) {
+    return res.status(400).json({ message: '当前密码不正确' });
+  }
+
+  const passwordHash = await hashPassword(String(newPassword));
+  await pool.query(
+    `UPDATE users
+     SET password_hash = $1, updated_at = NOW()
+     WHERE id = $2`,
+    [passwordHash, req.user.id]
+  );
+
+  return res.json({ message: '密码已更新' });
 });
 
 app.get('/api/explorer', authenticate, async (req, res) => {
@@ -464,6 +594,13 @@ app.post('/api/files/upload', authenticate, upload.array('files', 20), async (re
   const folder = await getFolder(folderId, req.user.id);
   if (folderId !== null && !folder) {
     return res.status(404).json({ message: '目标目录不存在' });
+  }
+
+  const incomingTotal = incomingFiles.reduce((sum, file) => sum + Number(file.size || 0), 0);
+  const stats = await getStorageStats(req.user.id);
+  const quotaBytes = Number(req.user.storageQuotaMb) * 1024 * 1024;
+  if (stats.totalSize + incomingTotal > quotaBytes) {
+    return res.status(400).json({ message: `超出存储配额：当前配额 ${req.user.storageQuotaMb}MB` });
   }
 
   try {
@@ -711,7 +848,7 @@ app.get('/api/public/shares/:token/preview', async (req, res) => {
 
 app.get('/api/admin/users', authenticate, requireAdmin, async (_req, res) => {
   const result = await pool.query(
-    `SELECT u.id, u.name, u.email, u.role, u.created_at,
+    `SELECT u.id, u.name, u.email, u.role, u.is_enabled, u.storage_quota_mb, u.created_at,
             COUNT(f.id)::int AS file_count,
             COALESCE(SUM(f.size), 0)::bigint AS total_size
      FROM users u
@@ -720,17 +857,130 @@ app.get('/api/admin/users', authenticate, requireAdmin, async (_req, res) => {
      ORDER BY u.created_at ASC`
   );
 
-  const users = result.rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    role: row.role,
-    createdAt: row.created_at,
-    fileCount: Number(row.file_count || 0),
-    totalSize: Number(row.total_size || 0)
-  }));
+  return res.json({ users: result.rows.map(serializeManagedUser) });
+});
 
-  return res.json({ users });
+app.patch('/api/admin/users/:id', authenticate, requireAdmin, async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ message: '用户 id 非法' });
+  }
+
+  const targetUser = await getUserById(userId);
+  if (!targetUser) {
+    return res.status(404).json({ message: '用户不存在' });
+  }
+
+  const nextName = req.body?.name !== undefined ? String(req.body.name).trim() : targetUser.name;
+  const nextRole = req.body?.role !== undefined ? String(req.body.role) : targetUser.role;
+  const nextIsEnabled = req.body?.isEnabled !== undefined ? Boolean(req.body.isEnabled) : targetUser.is_enabled;
+  let nextQuotaMb;
+
+  try {
+    nextQuotaMb = req.body?.storageQuotaMb !== undefined
+      ? normalizeQuotaMb(req.body.storageQuotaMb)
+      : Number(targetUser.storage_quota_mb);
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
+
+  if (!nextName) {
+    return res.status(400).json({ message: '昵称不能为空' });
+  }
+
+  if (!['user', 'admin'].includes(nextRole)) {
+    return res.status(400).json({ message: '角色只能是 user 或 admin' });
+  }
+
+  if (userId === req.user.id) {
+    if (!nextIsEnabled) {
+      return res.status(400).json({ message: '不能禁用当前登录账号' });
+    }
+    if (nextRole !== targetUser.role) {
+      return res.status(400).json({ message: '不能在这里修改自己的角色' });
+    }
+  }
+
+  if (targetUser.role === 'admin' && (nextRole !== 'admin' || !nextIsEnabled)) {
+    const adminCount = await countAdminUsers();
+    if (adminCount <= 1) {
+      return res.status(400).json({ message: '系统至少需要保留一个管理员账号' });
+    }
+  }
+
+  await pool.query(
+    `UPDATE users
+     SET name = $1,
+         role = $2,
+         is_enabled = $3,
+         storage_quota_mb = $4,
+         updated_at = NOW()
+     WHERE id = $5`,
+    [nextName, nextRole, nextIsEnabled, nextQuotaMb, userId]
+  );
+
+  const updatedUser = await getAdminUserSummary(userId);
+  return res.json({ user: updatedUser });
+});
+
+app.post('/api/admin/users/:id/reset-password', authenticate, requireAdmin, async (req, res) => {
+  const userId = Number(req.params.id);
+  const newPassword = String(req.body?.newPassword || '');
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ message: '用户 id 非法' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: '新密码至少需要 6 位' });
+  }
+
+  const targetUser = await getUserById(userId);
+  if (!targetUser) {
+    return res.status(404).json({ message: '用户不存在' });
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+  await pool.query(
+    `UPDATE users
+     SET password_hash = $1, updated_at = NOW()
+     WHERE id = $2`,
+    [passwordHash, userId]
+  );
+
+  return res.json({ message: `已重置 ${targetUser.email} 的密码` });
+});
+
+app.delete('/api/admin/users/:id', authenticate, requireAdmin, async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ message: '用户 id 非法' });
+  }
+
+  if (userId === req.user.id) {
+    return res.status(400).json({ message: '不能删除当前登录账号' });
+  }
+
+  const targetUser = await getUserById(userId);
+  if (!targetUser) {
+    return res.status(404).json({ message: '用户不存在' });
+  }
+
+  if (targetUser.role === 'admin') {
+    const adminCount = await countAdminUsers();
+    if (adminCount <= 1) {
+      return res.status(400).json({ message: '系统至少需要保留一个管理员账号' });
+    }
+  }
+
+  try {
+    await removeUserObjects(userId);
+    await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+    return res.json({ message: '用户已删除' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: '删除用户失败' });
+  }
 });
 
 app.use((error, _req, res, _next) => {

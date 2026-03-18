@@ -79,6 +79,10 @@
                 <span class="label">总占用</span>
                 <strong id="totalSize">0 B</strong>
               </div>
+              <div>
+                <span class="label">我的配额</span>
+                <strong id="quotaSize">0 MB</strong>
+              </div>
             </div>
           </div>
 
@@ -125,6 +129,39 @@
               <p id="shareMessage" class="hint"></p>
               <div id="sharesEmpty" class="empty">还没有分享链接，点某个文件的“分享”就能生成。</div>
               <div id="sharesList" class="share-list hidden"></div>
+            </div>
+
+            <div class="card account-card">
+              <div class="section-head">
+                <h2>账户设置</h2>
+                <span id="accountRoleBadge" class="badge">user</span>
+              </div>
+              <div class="account-meta">
+                <span id="accountEmailText"></span>
+                <span id="accountStatusText"></span>
+              </div>
+
+              <form id="profileForm" class="stack spaced-top">
+                <label>
+                  <span>昵称</span>
+                  <input id="accountNameInput" type="text" placeholder="输入新的昵称" />
+                </label>
+                <button type="submit">保存资料</button>
+              </form>
+              <p id="profileMessage" class="hint"></p>
+
+              <form id="passwordForm" class="stack spaced-top">
+                <label>
+                  <span>当前密码</span>
+                  <input id="currentPasswordInput" type="password" placeholder="输入当前密码" />
+                </label>
+                <label>
+                  <span>新密码</span>
+                  <input id="newPasswordInput" type="password" placeholder="至少 6 位" />
+                </label>
+                <button type="submit">修改密码</button>
+              </form>
+              <p id="passwordMessage" class="hint"></p>
             </div>
 
             <div id="adminCard" class="card hidden">
